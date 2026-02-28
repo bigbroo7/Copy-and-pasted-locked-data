@@ -1,8 +1,10 @@
 import pyautogui
 import pyperclip
 import time
-import threading
+import sys
 from pynput import keyboard, mouse
+import pytesseract
+from PIL import ImageGrab
 
 # --- CONFIGURATION ---
 TRIGGER_KEY = keyboard.Key.shift_l  # Hold Left Shift to activate
@@ -12,62 +14,98 @@ POLLING_INTERVAL = 0.1              # How often to check for text under the curs
 # --- GLOBAL STATE ---
 last_copied_text = ""
 running = True
+shift_pressed = False
 
 def get_text_under_cursor():
     """Attempts to get text under the cursor using OCR."""
     try:
-        # Define a small region around the cursor to capture
+        # Define a region around the cursor to capture
         x, y = pyautogui.position()
-        region = (x - 50, y - 15, 100, 30) # (left, top, width, height)
+        region = (x - 100, y - 50, 200, 100)  # (left, top, width, height)
+        
+        # Ensure region is within screen bounds
+        left, top, width, height = region
+        if left < 0:
+            left = 0
+        if top < 0:
+            top = 0
 
         # Take a screenshot of the region
-        screenshot = pyautogui.screenshot(region=region)
+        screenshot = ImageGrab.grab(bbox=(left, top, left + width, top + height))
 
         # Convert the screenshot to text using OCR
-        # Note: This requires an OCR engine like Tesseract to be installed.
-        # If you get an error, you may need to install it:
-        # - Windows: Download installer from https://github.com/UB-Mannheim/tesseract/wiki
-        # - macOS: `brew install tesseract`
-        # - Linux: `sudo apt-get install tesseract-ocr`
-        text = pyautogui.image_to_string(screenshot, lang='eng', config='--psm 7')
+        text = pytesseract.image_to_string(screenshot)
 
-        return text.strip()
+        return text.strip() if text else None
 
     except Exception as e:
-        # This can fail if Tesseract is not installed or other issues occur.
         print(f"Error during OCR: {e}")
         return None
 
 def on_key_press(key):
     """Handles key press events."""
-    global last_copied_text
-    if key == TRIGGER_KEY:
-        # When trigger key is pressed, get text and copy it
-        current_text = get_text_under_cursor()
-        if current_text and current_text != last_copied_text:
-            pyperclip.copy(current_text)
-            last_copied_text = current_text
-            print(f"Copied to clipboard: '{current_text}'")
-    elif key == EXIT_KEY:
-        global running
-        running = False
-        return False  # Stop the listener
+    global last_copied_text, shift_pressed, running
+    
+    try:
+        if key == TRIGGER_KEY:
+            shift_pressed = True
+            print("Shift pressed - capturing text...")
+            current_text = get_text_under_cursor()
+            if current_text and current_text != last_copied_text:
+                pyperclip.copy(current_text)
+                last_copied_text = current_text
+                print(f"✓ Copied to clipboard: '{current_text}'")
+            elif current_text:
+                print(f"(Same text as before: '{current_text}')")
+            else:
+                print("No text detected under cursor")
+        
+        elif key == EXIT_KEY:
+            print("\nExiting Magic Mouse...")
+            running = False
+            return False  # Stop the listener
+    
+    except AttributeError:
+        pass
+
+def on_key_release(key):
+    """Handles key release events."""
+    global shift_pressed
+    try:
+        if key == TRIGGER_KEY:
+            shift_pressed = False
+    except AttributeError:
+        pass
 
 def main():
     """Main function to run the listener."""
-    print("--- Magic Mouse Script ---")
-    print(f"Hold '{TRIGGER_KEY}' to copy text under the cursor.")
-    print(f"Press '{EXIT_KEY}' to exit.")
-    print("Note: This script requires Tesseract OCR to be installed.")
-    print("---------------------------\n")
+    print("╔════════════════════════════════════════╗")
+    print("║     🖱���  MAGIC MOUSE - NOW ACTIVE 🖱️     ║")
+    print("╚════════════════════════════════════════╝")
+    print() 
+    print("📋 INSTRUCTIONS:")
+    print("  • Hold LEFT SHIFT over any text to copy it")
+    print("  • Press ESC to exit")
+    print() 
+    print("⚙️  REQUIREMENTS:")
+    print("  • Tesseract OCR must be installed")
+    print("  • Python dependencies installed from requirements.txt")
+    print() 
+    print("💡 TIP: Move your mouse over text and hold SHIFT to capture it!")
+    print("════════════════════════════════════════\n")
 
-    # Start the keyboard listener in a non-blocking way
-    with keyboard.Listener(on_press=on_key_press) as listener:
-        while running:
-            # Keep the main thread alive to listen for key presses
-            time.sleep(0.1)
+    # Start the keyboard listener
+    with keyboard.Listener(on_press=on_key_press, on_release=on_key_release) as listener:
+        try:
+            while running:
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            print("\nScript interrupted by user.")
+            running = False
         
         listener.stop()
+    
+    print("\n✓ Magic Mouse closed successfully!")
 
 if __name__ == "__main__":
     main()
